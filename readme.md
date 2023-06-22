@@ -17,6 +17,8 @@ What would it change if numbers are published back-to-back, i.e. at high through
 >   Grouping the values to work with batches may help.
 >   If that's not possible on the server side, doing it on the client side only would still be useful.
 >   Reconsidering the API so that a lower-frequency average is published is another alternative.
+>   Also, processing the data in parallel may help, using stream functions such as
+>   [`for_each_concurrent`](https://rust-lang.github.io/async-book/05_streams/02_iteration_and_concurrency.html).
 > - The communication may get saturated.
 >   Depending on the transport layer, it would result in a loss of messages
 >   or in an overwhelming delay.

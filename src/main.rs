@@ -13,6 +13,8 @@
 //
 use async_std::task::sleep;
 use clap::{App, Arg};
+use futures::{pin_mut, select, FutureExt};
+use futures_lite::stream::StreamExt;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::SeqCst};
 use std::time::Duration;
 use zenoh::config::Config;
@@ -35,44 +37,16 @@ async fn main() {
     println!("Declaring Publisher on '{key_expr}'...");
     let publisher = session.declare_publisher(key_expr).res().await.unwrap();
 
-    let _subscriber = session
-        .declare_subscriber(key_expr)
-        .callback(|sample| match TryInto::<i64>::try_into(sample.value) {
-            Ok(value) => match TryInto::<i32>::try_into(value) {
-                Ok(value) => {
-                    println!("Received: {}", value);
-                    TOTAL_RANDOM.fetch_add(value as i64, SeqCst);
-                    TOTAL_NOF_SAMPLES.fetch_add(1, SeqCst);
-                }
-                Err(e) => println!("Error, received number did not fit an i32: {}", e),
-            },
-            Err(e) => println!("Error: {}", e),
-        })
-        .res()
-        .await
-        .unwrap();
+    let processing_subscription = async {
+        let subscriber = session.declare_subscriber(key_expr).res().await.unwrap();
+        let mut subscriber_stream = subscriber.stream();
+        println!("Subscriber stream started.");
+        while let Some(sample) = subscriber_stream.next().await {
+            let value: i64 = sample.value.try_into().unwrap();
+            println!("Received: {:?}", value);
+            TOTAL_RANDOM.fetch_add(value, SeqCst);
+            TOTAL_NOF_SAMPLES.fetch_add(1, SeqCst);
 
-    let _queryable = session
-        .declare_queryable("test/average")
-        .callback(|query| {
-            let _ = query
-                .reply(Ok(Sample::new(
-                    keyexpr::new("test/average").unwrap(),
-                    TOTAL_RANDOM.load(SeqCst)
-                        / TryInto::<i64>::try_into(TOTAL_NOF_SAMPLES.load(SeqCst)).unwrap(),
-                )))
-                .res(); // TODO: handle errors
-        })
-        .res()
-        .await
-        .unwrap();
-
-    for idx in 1..u32::MAX {
-        sleep(Duration::from_nanos(1000)).await;
-        let value = rand::random::<i32>();
-        println!("Publication #{}: '{}': {}", &idx, &key_expr, &value);
-        publisher.put(value as i64).res().await.unwrap();
-        if idx % 3 == 0 {
             let avg: i64 = session
                 .get("test/average")
                 .res()
@@ -88,8 +62,42 @@ async fn main() {
                 .unwrap();
             println!("Current average: {:?}", avg);
         }
+        println!("Subscriber stream ended.")
     }
-    _subscriber.undeclare().res().await.unwrap();
+    .fuse();
+
+    let queryable = session
+        .declare_queryable("test/average")
+        .callback(|query| {
+            let _ = query
+                .reply(Ok(Sample::new(
+                    keyexpr::new("test/average").unwrap(),
+                    TOTAL_RANDOM.load(SeqCst)
+                        / TryInto::<i64>::try_into(TOTAL_NOF_SAMPLES.load(SeqCst)).unwrap(),
+                )))
+                .res(); // TODO: handle errors
+        })
+        .res()
+        .await
+        .unwrap();
+
+    let publishing = async {
+        for idx in 1..u32::MAX {
+            sleep(Duration::from_nanos(1000)).await;
+            let value = rand::random::<i32>();
+            println!("Publication #{}: '{}': {}", &idx, &key_expr, &value);
+            publisher.put(value as i64).res().await.unwrap();
+        }
+    }
+    .fuse();
+
+    pin_mut!(publishing, processing_subscription);
+    select! {
+        () = publishing => println!("publishing finished"),
+        () = processing_subscription => println!("subscription processing finished"),
+    }
+
+    queryable.undeclare().res().await.unwrap();
 }
 
 fn parse_args() -> Config {

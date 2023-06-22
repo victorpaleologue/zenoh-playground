@@ -312,6 +312,8 @@ dependencies = [
  "async-std",
  "clap",
  "env_logger",
+ "futures",
+ "futures-lite",
  "rand",
  "zenoh",
 ]
