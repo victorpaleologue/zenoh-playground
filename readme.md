@@ -1,6 +1,6 @@
 # Zenoh Playground
 
-This is a small challenge about Zenoh.
+This is an exercise about Zenoh.
 
 ## Instructions
 
