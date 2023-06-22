@@ -11,9 +11,8 @@
 // Contributors:
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
-use async_std::task::sleep;
+use async_std::task::{sleep, spawn};
 use clap::{App, Arg};
-use futures::{pin_mut, select, FutureExt};
 use futures_lite::stream::StreamExt;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::SeqCst};
 use std::time::Duration;
@@ -31,14 +30,22 @@ async fn main() {
     let config = parse_args();
 
     println!("Opening session...");
-    let session = zenoh::open(config).res().await.unwrap();
+    let session = zenoh::open(config.clone()).res().await.unwrap();
 
     let key_expr = "test/random";
     println!("Declaring Publisher on '{key_expr}'...");
     let publisher = session.declare_publisher(key_expr).res().await.unwrap();
 
-    let processing_subscription = async {
-        let subscriber = session.declare_subscriber(key_expr).res().await.unwrap();
+    let key_expr_for_subscription = key_expr.clone();
+    let config_for_subscription = config.clone();
+
+    let processing_subscription = spawn(async move {
+        let session = zenoh::open(config_for_subscription).res().await.unwrap();
+        let subscriber = session
+            .declare_subscriber(key_expr_for_subscription)
+            .res()
+            .await
+            .unwrap();
         let mut subscriber_stream = subscriber.stream();
         println!("Subscriber stream started.");
         while let Some(sample) = subscriber_stream.next().await {
@@ -63,8 +70,7 @@ async fn main() {
             println!("Current average: {:?}", avg);
         }
         println!("Subscriber stream ended.")
-    }
-    .fuse();
+    });
 
     let queryable = session
         .declare_queryable("test/average")
@@ -81,22 +87,15 @@ async fn main() {
         .await
         .unwrap();
 
-    let publishing = async {
-        for idx in 1..u32::MAX {
-            sleep(Duration::from_nanos(1000)).await;
-            let value = rand::random::<i32>();
-            println!("Publication #{}: '{}': {}", &idx, &key_expr, &value);
-            publisher.put(value as i64).res().await.unwrap();
-        }
-    }
-    .fuse();
+    for idx in 1..u32::MAX {
+        sleep(Duration::from_nanos(1000000000)).await;
+        let value = rand::random::<i32>();
+        println!("Publication #{}: '{}': {}", &idx, &key_expr, &value);
+        publisher.put(value as i64).res().await.unwrap();
 
-    pin_mut!(publishing, processing_subscription);
-    select! {
-        () = publishing => println!("publishing finished"),
-        () = processing_subscription => println!("subscription processing finished"),
     }
 
+    processing_subscription.cancel().await.unwrap();
     queryable.undeclare().res().await.unwrap();
 }
 
