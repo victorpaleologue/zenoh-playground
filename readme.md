@@ -47,6 +47,8 @@ In Rust, provide alternative implementations using the callback-based API and th
 > [this example of `z_get`](https://github.com/eclipse-zenoh/zenoh/blob/1de6e2f0b4a7954407583709615a6e2260e684d4/examples/README.md?plain=1#L99).
 > I might discover the stream-based API as I get some experience with Zenoh,
 > but the documentation does not help at my level of understanding.
+> ... And there I go, as I dived into the implementation,
+> I realized it was about the `select!` used to wait for several futures at once.
 
 You do not need to use the memory backend.
 We are expecting to use Zenoh directly from master on GitHub.
