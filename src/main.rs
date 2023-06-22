@@ -68,7 +68,7 @@ async fn main() {
         .unwrap();
 
     for idx in 1..u32::MAX {
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_nanos(1000)).await;
         let value = rand::random::<i32>();
         println!("Publication #{}: '{}': {}", &idx, &key_expr, &value);
         publisher.put(value as i64).res().await.unwrap();

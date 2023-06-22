@@ -20,6 +20,8 @@ What would it change if numbers are published back-to-back, i.e. at high through
 > - The communication may get saturated.
 >   Depending on the transport layer, it would result in a loss of messages
 >   or in an overwhelming delay.
+> - The coroutine workers may get saturated.
+>   At some point, even the publication frequency could be decreased in practice.
 
 What does it change if there are multiple publisher, subscribers, and queryables?
 > The overall number of messages potentially grows a lot, depending on the network topology.
